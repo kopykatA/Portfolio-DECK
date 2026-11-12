@@ -1,0 +1,19 @@
+[package]
+name = "northstar_portfolio"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "northstar_portfolio"
+path = "src/main.rs"
+
+[[bin]]
+name = "PortfolioDECK"
+path = "src/deck_exe.rs"
+
+[dependencies]
+eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

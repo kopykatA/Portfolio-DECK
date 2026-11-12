@@ -12,3 +12,4 @@ Minimal, sleek investment portfolio dashboard with a standalone Windows executab
 ## Run
 - **Windows:** Download `PortfolioDECK.exe` from [Releases](https://github.com/kopykatA/Portfolio-DECK/releases) and double-click it.
 - **From source (Node.js):** `node server.js` and open `http://localhost:4173`.
+<img width="1664" height="935" alt="image" src="https://github.com/user-attachments/assets/d50d1370-25cf-4ac8-b6c7-8c6ffbf05698" />

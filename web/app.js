@@ -452,9 +452,15 @@ function renderTreemap(box, legend, items, total, animate, showAllLabels){
   layout(items.map((t,i)=>({...t,i})),0,0,W,H,tiles);
   tiles.sort((a,b)=>a.i-b.i);
   box.innerHTML=tiles.map(t=>{
-    const big=showAllLabels ? (t.w>46&&t.h>36) : (t.w>62&&t.h>46);
+    const minSide=Math.min(t.w,t.h);
+    const compact=t.w<96||t.h<68;
+    const tiny=t.w<44||t.h<34;
+    const big=showAllLabels ? (t.w>=44&&t.h>=34) : (t.w>62&&t.h>46);
+    const rad=Math.max(4,Math.min(showAllLabels?16:14,Math.floor(minSide*0.24)));
+    const pad=tiny?1.5:(compact?2:3);
     const pct=(t.v/total*100).toFixed(t.v/total<.1?1:0);
-    return `<div class="tile ${animate?'':'no-anim'}" data-i="${t.i}" style="left:${t.x/W*100}%;top:${t.y/H*100}%;width:${t.w/W*100}%;height:${t.h/H*100}%;--c:${t.c};--n:${t.i}"><div class="tile-in">${big?`<b>${esc(t.label)}</b><small>${pct}%</small>`:''}</div></div>`;
+    const cls=`tile${animate?'':' no-anim'}${compact?' compact':''}${tiny?' tiny':''}`;
+    return `<div class="${cls}" data-i="${t.i}" title="${esc(t.label)} · ${(t.v/total*100).toFixed(2)}%" style="left:${t.x/W*100}%;top:${t.y/H*100}%;width:${t.w/W*100}%;height:${t.h/H*100}%;padding:${pad}px;--c:${t.c};--n:${t.i};--tr:${rad}px"><div class="tile-in">${big?`<b>${esc(t.label)}</b><small>${pct}%</small>`:''}</div></div>`;
   }).join('');
   legend.innerHTML=items.map((s,i)=>`<li data-i="${i}"><i style="background:${s.c}"></i>${esc(s.label)}<em>${(s.v/total*100).toFixed(1)}%</em></li>`).join('');
   const hl=i=>{ box.classList.toggle('hov',i!=null); $$('.tile',box).forEach(c=>c.classList.toggle('hl',+c.dataset.i===i)); $$('li',legend).forEach(l=>l.classList.toggle('hl',+l.dataset.i===i)); };

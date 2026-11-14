@@ -1,5 +1,11 @@
 app/target/
 dist/
+build/
 user_data/
 node_modules/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+.DS_Store
 *.csv

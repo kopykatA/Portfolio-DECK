@@ -40,6 +40,8 @@ const I = {
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon:'<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   expand:'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
+  upload:'<path d="M12 16V5"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/>',
+  csv:'<path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/><path d="M8 14V4m0 0L5 7m3-3l3 3"/><path d="M16 4v10m0 0l-3-3m3 3l3-3"/>',
 };
 const icon = n => `<svg class="ic" viewBox="0 0 24 24">${I[n]||''}</svg>`;
 const hydrateIcons = (root=document) => root.querySelectorAll('[data-icon]').forEach(el => { if(!el.dataset.done){ el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)); el.dataset.done=1; } });
@@ -52,14 +54,14 @@ const QT = {Equity:['EQUITY'],Fund:['ETF','MUTUALFUND'],Commodity:['FUTURE']};
 const PALETTE = ['#4f7cff','#8b5cf6','#22d3ee','#2ee6a6','#f59e0b','#ff6b9a','#64748b'];
 const TYPES = [{k:'Crypto',ic:'coin'},{k:'Equity',ic:'chart'},{k:'Fund',ic:'fund'},{k:'Commodity',ic:'gem'},{k:'Other',ic:'dot'}];
 const PH = {Crypto:'BTC · Ethereum',Equity:'AAPL · Apple',Fund:'VOO · Vanguard',Commodity:'Gold · GC=F'};
-const CURS = ['USD','EUR','BTC'];
+const CURS = ['USD','EUR','BTC','ETH'];
 
 const readJSON = (k,d) => { try{ const v=JSON.parse(localStorage.getItem(k)); return v??d; }catch{ return d; } };
 const S = {
   assets: Array.isArray(readJSON(KEY,null)) ? readJSON(KEY,null) : [],
   watch: Array.isArray(readJSON(WKEY,null)) ? readJSON(WKEY,null) : [],
   cfg: Object.assign({cmcKey:'', apis:[], theme:'dark', cur:'USD'}, readJSON(CKEY,{})),
-  rates: { eurPerUsd: 0.92, btcUsd: 85000 },
+  rates: { eurPerUsd: 0.92, btcUsd: 85000, ethUsd: 3000 },
   page:'portfolio', range:'1M', sort:{k:'value',dir:-1}, q:'', hide:false,
   edit:null, mode:'own', type:'Crypto', busy:false, hist:{}, lastUpdate:null, src:'', histReq:0,
   ad: null, adRange: '1M', adReq: 0,
@@ -104,13 +106,23 @@ function coinHtml(a){
 function conv(usd){
   if(S.cfg.cur==='EUR') return usd * S.rates.eurPerUsd;
   if(S.cfg.cur==='BTC') return S.rates.btcUsd ? usd / S.rates.btcUsd : 0;
+  if(S.cfg.cur==='ETH') return S.rates.ethUsd ? usd / S.rates.ethUsd : 0;
   return usd;
 }
-function curSym(){ return S.cfg.cur==='EUR'?'€':S.cfg.cur==='BTC'?'₿':'$'; }
+function curSym(){ return S.cfg.cur==='EUR'?'€':S.cfg.cur==='BTC'?'₿':S.cfg.cur==='ETH'?'Ξ':'$'; }
 function fmtDisplayCur(v, isSigned=false){
   const neg = v<0, av = Math.abs(v), pre = isSigned ? (v>0?'+':neg?'-':'') : (neg?'-':'');
-  if(S.cfg.cur==='BTC'){ const d = av>=10?3:av>=1?4:6; return `${pre}₿${av.toFixed(d)}`; }
+  if(S.cfg.cur==='BTC'||S.cfg.cur==='ETH'){ const d = av>=10?3:av>=1?4:6; return `${pre}${curSym()}${av.toFixed(d)}`; }
   return `${pre}${curSym()}${av.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+}
+function fmtAssetPriceCur(usd){
+  const v = conv(usd), av = Math.abs(v), pre = v<0?'-':'';
+  if(S.cfg.cur==='BTC'||S.cfg.cur==='ETH'){
+    const d = av>=10?3:av>=1?4:av>=.01?5:7;
+    return `${pre}${curSym()}${av.toFixed(d)}`;
+  }
+  const d = av>=1?2:av>=.1?4:av>=.01?5:7;
+  return `${pre}${curSym()}${av.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:d})}`;
 }
 
 const rng = seed => { let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; };
@@ -169,14 +181,19 @@ async function fx(cur){
 }
 async function fetchRates(){
   const btc = [...S.assets,...S.watch].find(a=>a.symbol==='BTC'&&a.price>0);
+  const eth = [...S.assets,...S.watch].find(a=>a.symbol==='ETH'&&a.price>0);
   if(btc) S.rates.btcUsd = btc.price;
+  if(eth) S.rates.ethUsd = eth.price;
   try{
-    const j=await cgGet('/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur');
+    const j=await cgGet('/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd,eur');
     if(j.bitcoin?.usd && j.bitcoin?.eur){
       S.rates.btcUsd = j.bitcoin.usd;
       S.rates.eurPerUsd = j.bitcoin.eur / j.bitcoin.usd;
-      return;
     }
+    if(j.ethereum?.usd){
+      S.rates.ethUsd = j.ethereum.usd;
+    }
+    if(j.bitcoin?.usd) return;
   }catch{}
   if(API.proxy){
     try{ const usdPerEur = await fx('EUR'); if(usdPerEur>0) S.rates.eurPerUsd = 1/usdPerEur; }catch{}
@@ -386,13 +403,44 @@ function bindChartHover(box, cur, tip, getData, getPts, getRange, fmtVal){
 
 /* ---------- allocation: top 3 on main card + full-page motion takeover ---------- */
 function layout(items,x,y,w,h,out){
-  if(!items.length) return;
-  if(items.length===1){ out.push({...items[0],x,y,w,h}); return; }
-  const tot=sum(items,i=>i.v)||1; let acc=0,best=1,bd=Infinity;
-  for(let k=1;k<items.length;k++){ acc+=items[k-1].v; const d=Math.abs(acc-tot/2); if(d<bd){bd=d;best=k;} }
-  const a=items.slice(0,best), b=items.slice(best), f=sum(a,i=>i.v)/tot;
-  if(w>=h){ layout(a,x,y,w*f,h,out); layout(b,x+w*f,y,w*(1-f),h,out); }
-  else { layout(a,x,y,w,h*f,out); layout(b,x,y+h*f,w,h*(1-f),out); }
+  if(!items.length || w<=0 || h<=0) return;
+  const total=sum(items,i=>i.v);
+  if(total<=0) return;
+  const scaled=items.map(it=>({...it, area:it.v/total*w*h})).sort((a,b)=>b.area-a.area);
+  const worst=(row,side)=>{
+    if(!row.length||side<=0) return Infinity;
+    const s=row.reduce((a,b)=>a+b.area,0);
+    let mx=0, mn=Infinity;
+    for(const r of row){ if(r.area>mx) mx=r.area; if(r.area<mn) mn=r.area; }
+    const s2=s*s, l2=side*side;
+    return Math.max((l2*mx)/s2, s2/(l2*mn));
+  };
+  let cx=x, cy=y, cw=w, ch=h, row=[];
+  const placeRow=r=>{
+    const s=r.reduce((a,b)=>a+b.area,0);
+    if(cw>=ch){
+      const rw=ch>0?s/ch:0;
+      let ry=cy;
+      for(const it of r){ const rh=rw>0?it.area/rw:0; out.push({...it,x:cx,y:ry,w:rw,h:rh}); ry+=rh; }
+      cx+=rw; cw=Math.max(0,cw-rw);
+    }else{
+      const rh=cw>0?s/cw:0;
+      let rx=cx;
+      for(const it of r){ const rw=rh>0?it.area/rh:0; out.push({...it,x:rx,y:cy,w:rw,h:rh}); rx+=rw; }
+      cy+=rh; ch=Math.max(0,ch-rh);
+    }
+  };
+  for(const it of scaled){
+    const side=Math.min(cw,ch);
+    const next=[...row,it];
+    if(!row.length || worst(next,side)<=worst(row,side)){
+      row=next;
+    }else{
+      placeRow(row);
+      row=[it];
+    }
+  }
+  if(row.length) placeRow(row);
 }
 function renderTreemap(box, legend, items, total, animate, showAllLabels){
   if(!items.length || !total){
@@ -421,13 +469,13 @@ function renderAlloc(animate=true){
   $('#btnAllocAll').style.display=items.length?'':'none';
   renderTreemap(box, $('#legend'), top3, total, animate, false);
 }
-function openAllocOverlay(){
+function openAllocOverlay(animate=true){
   const ov=$('#allocOverlay'); ov.classList.add('open'); ov.setAttribute('aria-hidden','false');
   const total=sum(S.assets,val);
   const items=[...S.assets].filter(a=>val(a)>0).sort((a,b)=>val(b)-val(a))
     .map((a,i)=>({label:a.symbol,v:val(a),c:PALETTE[i%PALETTE.length]}));
   $('#allocFullCount').textContent=`${items.length} assets`;
-  requestAnimationFrame(()=>renderTreemap($('#tmapFull'), $('#legendFull'), items, total, true, true));
+  requestAnimationFrame(()=>requestAnimationFrame(()=>renderTreemap($('#tmapFull'), $('#legendFull'), items, total, animate, true)));
 }
 function closeAllocOverlay(){
   const ov=$('#allocOverlay'); ov.classList.remove('open'); ov.setAttribute('aria-hidden','true');
@@ -435,29 +483,37 @@ function closeAllocOverlay(){
 
 /* ---------- asset detail overlay ---------- */
 let adData=[], adPts=[];
-function openAssetDetail(a, owned){
-  S.ad={a,owned};
-  const ov=$('#assetOverlay'); ov.classList.add('open'); ov.setAttribute('aria-hidden','false');
-  const up=a.daily_change_pct>=0;
-  $('#adId').innerHTML=`${coinHtml(a)}<div><h2>${esc(a.name)}</h2><small>${esc(a.symbol)} · ${esc(a.category)}</small></div>`;
-  $('#adPrice').innerHTML=`<b>${fmtPrice(a.price)}</b><span class="pill ${up?'up':'down'}">${icon(up?'up':'down')}${Math.abs(a.daily_change_pct).toFixed(2)}%</span>`;
+function renderAssetDetailBody(){
+  if(!S.ad) return;
+  const {a, owned}=S.ad, up=a.daily_change_pct>=0, cur=S.cfg.cur||'USD';
+  const priceBox=$('#adPrice');
+  priceBox.classList.add('clickable');
+  priceBox.title='Click to switch USD / EUR / BTC / ETH';
+  priceBox.innerHTML=`<b>${fmtAssetPriceCur(a.price)}</b><button type="button" class="cur-pill">${esc(cur)}</button><span class="pill ${up?'up':'down'}">${icon(up?'up':'down')}${Math.abs(a.daily_change_pct).toFixed(2)}%</span>`;
+  priceBox.onclick=cycleCur;
   const total=sum(S.assets,val)||1, p=pl(a), c=cost(a);
   if(owned){
     const ret=c?p/c*100:0;
     $('#adStats').innerHTML=`
       <article class="card ad-stat"><em>Units Held</em><b class="num-h">${fmtUnits(a.units)}</b><small>${esc(a.symbol)}</small></article>
-      <article class="card ad-stat"><em>Avg Cost</em><b class="num-h">${fmtPrice(a.average_cost)}</b><small>per unit</small></article>
-      <article class="card ad-stat"><em>Cost Basis</em><b class="num-h">${fmtMoney(c)}</b><small>invested</small></article>
-      <article class="card ad-stat"><em>Market Value</em><b class="num-h">${fmtMoney(val(a))}</b><small>current</small></article>
-      <article class="card ad-stat"><em>Profit / Loss</em><b class="num-h ${p>=0?'up':'down'}">${signed(p)}</b><small class="${ret>=0?'up':'down'}">${fmtPct(ret)}</small></article>
+      <article class="card ad-stat"><em>Avg Cost</em><b class="num-h">${fmtAssetPriceCur(a.average_cost)}</b><small>per unit (${esc(cur)})</small></article>
+      <article class="card ad-stat"><em>Cost Basis</em><b class="num-h">${fmtDisplayCur(conv(c))}</b><small>invested</small></article>
+      <article class="card ad-stat"><em>Market Value</em><b class="num-h">${fmtDisplayCur(conv(val(a)))}</b><small>current</small></article>
+      <article class="card ad-stat"><em>Profit / Loss</em><b class="num-h ${p>=0?'up':'down'}">${fmtDisplayCur(conv(p),true)}</b><small class="${ret>=0?'up':'down'}">${fmtPct(ret)}</small></article>
       <article class="card ad-stat"><em>Portfolio Share</em><b>${(val(a)/total*100).toFixed(2)}%</b><small>of total</small></article>`;
   }else{
     $('#adStats').innerHTML=`
-      <article class="card ad-stat"><em>Current Price</em><b>${fmtPrice(a.price)}</b><small>USD</small></article>
+      <article class="card ad-stat"><em>Current Price</em><b>${fmtAssetPriceCur(a.price)}</b><small>${esc(cur)}</small></article>
       <article class="card ad-stat"><em>24h Change</em><b class="${up?'up':'down'}">${fmtPct(a.daily_change_pct)}</b><small>daily</small></article>
       <article class="card ad-stat"><em>Category</em><b>${esc(a.category)}</b><small>asset type</small></article>
       <article class="card ad-stat"><em>Status</em><b>Watchlist</b><small>not held</small></article>`;
   }
+}
+function openAssetDetail(a, owned){
+  S.ad={a,owned};
+  const ov=$('#assetOverlay'); ov.classList.add('open'); ov.setAttribute('aria-hidden','false');
+  $('#adId').innerHTML=`${coinHtml(a)}<div><h2>${esc(a.name)}</h2><small>${esc(a.symbol)} · ${esc(a.category)}</small></div>`;
+  renderAssetDetailBody();
   $$('#adRanges button').forEach(b=>b.classList.toggle('on',b.dataset.r===S.adRange));
   requestAnimationFrame(()=>updateAssetChart(true));
 }
@@ -663,16 +719,93 @@ function openSettings(){ $('#cmcKey').value=S.cfg.cmcKey||''; $('#apiNewKey').va
 function saveSettings(e){ e.preventDefault(); S.cfg.cmcKey=$('#cmcKey').value.trim(); save(); renderSources(); hideModal($('#settings')); toast('APIs ✓'); }
 
 /* ---------- csv ---------- */
+function openCsvModal(){ show('#csvModal'); }
 function exportCsv(){
   const cell=s=>`"${String(s).replace(/"/g,'""')}"`;
   let c='symbol,name,category,units,current_price_usd,average_cost_usd,daily_change_pct,market_value_usd,cost_basis_usd,unrealized_pl_usd,watchlist\n';
   S.assets.forEach(a=>{ c+=[cell(a.symbol),cell(a.name),cell(a.category),a.units,a.price,a.average_cost,a.daily_change_pct,val(a),cost(a),pl(a),a.watchlist].join(',')+'\n'; });
-  const url=URL.createObjectURL(new Blob([c],{type:'text/csv'})), l=document.createElement('a'); l.href=url; l.download='portfolio-deck-export.csv'; l.click(); URL.revokeObjectURL(url);
+  if(window.webkit?.messageHandlers?.exportCsv){
+    window.webkit.messageHandlers.exportCsv.postMessage({filename:'portfolio-deck-export.csv', content:c});
+  } else if(window.AndroidBridge?.exportCsv){
+    window.AndroidBridge.exportCsv('portfolio-deck-export.csv', c);
+  } else {
+    const url=URL.createObjectURL(new Blob([c],{type:'text/csv'})), l=document.createElement('a'); l.href=url; l.download='portfolio-deck-export.csv'; l.click(); URL.revokeObjectURL(url);
+  }
   toast(`${S.assets.length} ↓`);
+}
+function parseCsvRows(text){
+  const rows=[]; let row=[], val='', inQ=false;
+  const s=text.replace(/^\uFEFF/,'');
+  for(let i=0;i<s.length;i++){
+    const ch=s[i];
+    if(inQ){
+      if(ch==='"' && s[i+1]==='"'){ val+='"'; i++; }
+      else if(ch==='"'){ inQ=false; }
+      else val+=ch;
+    }else{
+      if(ch==='"') inQ=true;
+      else if(ch===','){ row.push(val.trim()); val=''; }
+      else if(ch==='\n' || ch==='\r'){
+        if(ch==='\r' && s[i+1]==='\n') i++;
+        row.push(val.trim());
+        if(row.some(x=>x!=='')) rows.push(row);
+        row=[]; val='';
+      }else val+=ch;
+    }
+  }
+  if(val!=='' || row.length){ row.push(val.trim()); if(row.some(x=>x!=='')) rows.push(row); }
+  return rows;
+}
+function importCsvText(text, replace){
+  const rows=parseCsvRows(text);
+  if(rows.length<2) return toast('CSV is empty',true);
+  const hdr=rows[0].map(h=>h.toLowerCase().replace(/[^a-z0-9_]/g,''));
+  const idx=(...names)=>{ for(const n of names){ const k=hdr.indexOf(n); if(k>=0) return k; } return -1; };
+  const iSym=idx('symbol','ticker','asset','coin'), iName=idx('name','assetname'), iCat=idx('category','type','class');
+  const iUnits=idx('units','amount','quantity','qty','held'), iPrice=idx('current_price_usd','price','currentprice','price_usd');
+  const iCost=idx('average_cost_usd','average_cost','avg_cost','cost','buy_price'), iChg=idx('daily_change_pct','change','change_24h','24h');
+  const iWatch=idx('watchlist','watch','starred');
+  if(iSym<0) return toast('Missing symbol column',true);
+  const imported=[];
+  for(let r=1;r<rows.length;r++){
+    const c=rows[r], sym=(c[iSym]||'').trim().toUpperCase();
+    if(!sym) continue;
+    const catRaw=(iCat>=0?c[iCat]:'Crypto')||'Crypto';
+    const cat=TYPES.find(t=>t.k.toLowerCase()===catRaw.toLowerCase())?.k || (/crypto/i.test(catRaw)?'Crypto':/stock|eq/i.test(catRaw)?'Equity':/etf|fund/i.test(catRaw)?'Fund':/comm|gold|silver|oil/i.test(catRaw)?'Commodity':'Other');
+    const num=(i,d=0)=>{ const v=i>=0?parseFloat(String(c[i]).replace(/[$,%\s]/g,'')):NaN; return isFinite(v)?v:d; };
+    const units=num(iUnits,0), price=num(iPrice,0), avg=num(iCost,price), chg=num(iChg,0);
+    const w=iWatch>=0 && /^(true|1|yes|y)$/i.test(String(c[iWatch]).trim());
+    imported.push({
+      symbol:sym, name:(iName>=0&&c[iName])?c[iName]:sym, category:cat,
+      units, price, average_cost:avg, daily_change_pct:chg,
+      coingecko_id:cat==='Crypto'?(CG_IDS[sym]||''):'', watchlist:w
+    });
+  }
+  if(!imported.length) return toast('No valid rows found',true);
+  if(replace){ S.assets=[]; S.watch=[]; }
+  imported.forEach(item=>{
+    if(item.units===0 && item.watchlist){
+      const wi=S.watch.findIndex(x=>x.symbol===item.symbol);
+      if(wi>=0) S.watch[wi]=item; else S.watch.push(item);
+    }else{
+      const ai=S.assets.findIndex(x=>x.symbol===item.symbol);
+      if(ai>=0) S.assets[ai]=item; else S.assets.push(item);
+    }
+  });
+  normalizeAssets(); save(); S.hist={}; redrawData();
+  if(S.page==='portfolio') updateChart(true);
+  hideModal($('#csvModal'));
+  toast(`${imported.length} ↑`);
+  refresh(true);
 }
 
 /* ---------- pages / wiring ---------- */
-function movePill(){ const a=$('.rail-btn.active'), p=$('#railPill'); if(a) p.style.transform=`translateY(${a.offsetTop}px)`; }
+function movePill(){
+  const a=$('.rail-btn.active'), p=$('#railPill');
+  if(!a||!p) return;
+  const horiz=window.innerWidth<=760;
+  p.style.transform=horiz?`translateX(${a.offsetLeft}px)`:`translateY(${a.offsetTop}px)`;
+}
 function moveRange(){ const b=$('#ranges .on'), p=$('.range-ind'); if(!b.offsetWidth) return; p.style.width=b.offsetWidth+'px'; p.style.transform=`translateX(${b.offsetLeft-4}px)`; }
 function replay(root){ $$('.reveal',root).forEach(el=>{ el.style.animation='none'; void el.offsetHeight; el.style.animation=''; }); }
 function setPage(p){
@@ -686,6 +819,7 @@ function cycleCur(){
   const idx=CURS.indexOf(S.cfg.cur||'USD');
   S.cfg.cur=CURS[(idx+1)%CURS.length];
   save(); renderHero();
+  if(S.ad) renderAssetDetailBody();
 }
 async function loadServerData(){
   try{
@@ -714,7 +848,16 @@ function init(){
   addEventListener('keydown',e=>{ if(e.key==='/'&&!/INPUT|SELECT/.test(document.activeElement.tagName)){ e.preventDefault(); $('#q').focus(); } if(e.key==='Escape'){ $$('.modal.open').forEach(hideModal); closeAllocOverlay(); closeAssetDetail(); $('#q').blur(); } });
   $('#btnRefresh').onclick=()=>refresh(false);
   $('#btnAdd').onclick=()=>openModal();
-  $('#btnExport').onclick=exportCsv;
+  $('#btnExport').onclick=openCsvModal;
+  $('#btnCsvExport').onclick=()=>{ exportCsv(); hideModal($('#csvModal')); };
+  $('#btnCsvImport').onclick=()=>$('#csvFile').click();
+  $('#csvFile').onchange=e=>{
+    const f=e.target.files?.[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>importCsvText(String(r.result||''), $('#csvReplace').checked);
+    r.readAsText(f);
+    e.target.value='';
+  };
   $('#btnSettings').onclick=openSettings;
   $('#btnTheme').onclick=()=>{ applyTheme(S.cfg.theme==='dark'?'light':'dark'); save(); };
   $('#btnHide').onclick=()=>{ S.hide=!S.hide; document.body.classList.toggle('blur',S.hide); $('#btnHide').innerHTML=icon(S.hide?'eyeOff':'eye'); };
@@ -757,9 +900,9 @@ function init(){
   document.addEventListener('pointermove',e=>{ const c=e.target.closest?.('.glow'); if(c){ const r=c.getBoundingClientRect(); c.style.setProperty('--mx',(e.clientX-r.left)+'px'); c.style.setProperty('--my',(e.clientY-r.top)+'px'); } });
   $$('.magnetic').forEach(m=>{ m.addEventListener('pointermove',e=>{ const r=m.getBoundingClientRect(); m.style.transform=`translate(${(e.clientX-r.left-r.width/2)*.25}px,${(e.clientY-r.top-r.height/2)*.25}px)`; }); m.addEventListener('pointerleave',()=>{ m.style.transition='transform .6s var(--ease)'; m.style.transform=''; setTimeout(()=>m.style.transition='',600); }); });
   addEventListener('pointermove',e=>{ const x=(e.clientX/innerWidth-.5), y=(e.clientY/innerHeight-.5); $$('.orb').forEach((o,i)=>o.style.translate=`${-x*(30+i*18)}px ${-y*(30+i*18)}px`); });
-  let rz; addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ movePill(); moveRange(); if(S.page==='portfolio'){ drawChart(chartData,$('#est').classList.contains('on'),false); renderAlloc(false); } if(S.ad) adPts=drawLineChart($('#adChart'),$('#adChartSvg'),adData,$('#adEst'),$('#adEst').classList.contains('on'),false); },120); });
+  let rz; addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ movePill(); moveRange(); if(S.page==='portfolio'){ drawChart(chartData,$('#est').classList.contains('on'),false); renderAlloc(false); } if($('#allocOverlay').classList.contains('open')) openAllocOverlay(false); if(S.ad) adPts=drawLineChart($('#adChart'),$('#adChartSvg'),adData,$('#adEst'),$('#adEst').classList.contains('on'),false); },120); });
   bindChartHover($('#chart'),$('#cursor'),$('#tip'),()=>chartData,()=>chartPts,()=>S.range,v=>S.hide?'••••••':fmtDisplayCur(conv(v)));
-  bindChartHover($('#adChart'),$('#adCursor'),$('#adTip'),()=>adData,()=>adPts,()=>S.adRange,v=>fmtPrice(v));
+  bindChartHover($('#adChart'),$('#adCursor'),$('#adTip'),()=>adData,()=>adPts,()=>S.adRange,v=>fmtAssetPriceCur(conv(v)));
   renderAll(); movePill(); moveRange();
   loadServerData();
   setInterval(()=>refresh(true),90e3);

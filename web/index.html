@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Portfolio DECK</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0e18'/%3E%3Cpath d='M16 4l10.4 6v12L16 28 5.6 22V10z' fill='none' stroke='%236e96ff' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M16 10.5l4.8 2.75v5.5L16 21.5l-4.8-2.75v-5.5z' fill='%234f7cff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,7 +35,7 @@
     <div class="rail-foot">
       <button class="rail-btn rail-api" id="btnSettings" title="APIs &amp; Data sources">API</button>
       <button class="rail-btn" id="btnTheme" title="Light / Dark mode" data-icon="sun"></button>
-      <button class="rail-btn" id="btnExport" title="Export CSV" data-icon="download"></button>
+      <button class="rail-btn" id="btnExport" title="Import / Export CSV" data-icon="csv"></button>
       <button class="rail-btn" id="btnHide" title="Hide balances" data-icon="eye"></button>
     </div>
   </nav>
@@ -51,8 +51,8 @@
         <article class="card hero reveal glow" style="--d:.05s">
           <div class="hero-head">
             <div>
-              <div class="eyebrow"><span data-icon="wallet"></span><em>Total balance</em><button type="button" class="cur-pill" id="curPill" title="Switch currency (USD / EUR / BTC)">USD</button></div>
-              <div class="big num-h clickable" id="total" title="Click to switch USD / EUR / BTC">$0.00</div>
+              <div class="eyebrow"><span data-icon="wallet"></span><em>Total balance</em><button type="button" class="cur-pill" id="curPill" title="Switch currency (USD / EUR / BTC / ETH)">USD</button></div>
+              <div class="big num-h clickable" id="total" title="Click to switch USD / EUR / BTC / ETH">$0.00</div>
               <div class="delta" id="dayDelta"></div>
             </div>
             <div class="ranges" id="ranges">
@@ -189,6 +189,21 @@
     <p class="hint">Keys stay on this computer in your user_data folder and are only sent to your local server.</p>
     <div class="sheet-actions"><button class="cta wide" type="submit" title="Save"><span data-icon="check"></span></button></div>
   </form>
+</div>
+
+<div class="modal" id="csvModal" aria-hidden="true">
+  <div class="scrim" data-close></div>
+  <div class="sheet sheet-csv">
+    <button type="button" class="icon-btn close" data-close title="Close" data-icon="x"></button>
+    <div class="sheet-title"><span data-icon="csv"></span><span>Import / Export CSV</span></div>
+    <p class="hint" style="margin-top:0;margin-bottom:14px">Import a CSV file to fill or update your portfolio, or export your current holdings.</p>
+    <label class="csv-opt"><input type="checkbox" id="csvReplace"><span>Replace existing portfolio on import</span></label>
+    <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+    <div class="csv-actions">
+      <button type="button" class="cta wide csv-btn" id="btnCsvImport"><span data-icon="upload"></span><span>Import CSV</span></button>
+      <button type="button" class="icon-btn wide csv-btn" id="btnCsvExport"><span data-icon="download"></span><span>Export CSV</span></button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>

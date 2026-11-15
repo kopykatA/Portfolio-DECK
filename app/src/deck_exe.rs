@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 const INDEX_HTML: &str = include_str!("../../web/index.html");
 const STYLE_CSS: &str = include_str!("../../web/style.css");
 const APP_JS: &str = include_str!("../../web/app.js");
+const DECK_ICO: &[u8] = include_bytes!("deck.ico");
 
 static ACTIVE_CLIENTS: AtomicUsize = AtomicUsize::new(0);
 static EVER_CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -169,6 +170,7 @@ fn handle_conn(mut stream: TcpStream, client: Arc<Client>, dir: Arc<PathBuf>) {
         ("GET", "/") | ("GET", "/index.html") => send_resp(stream, "200 OK", "text/html; charset=utf-8", INDEX_HTML.as_bytes()),
         ("GET", "/style.css") => send_resp(stream, "200 OK", "text/css; charset=utf-8", STYLE_CSS.as_bytes()),
         ("GET", "/app.js") => send_resp(stream, "200 OK", "text/javascript; charset=utf-8", APP_JS.as_bytes()),
+        ("GET", "/favicon.ico") => send_resp(stream, "200 OK", "image/x-icon", DECK_ICO),
         ("GET", "/api/ping") => send_resp(stream, "200 OK", "application/json", br#"{"ok":true}"#),
         ("GET", "/api/events") => handle_events(stream),
         ("GET", "/api/data") => {
@@ -220,6 +222,181 @@ fn find_browser() -> Option<PathBuf> {
     candidates.iter().map(PathBuf::from).find(|p| p.exists())
 }
 
+#[cfg(target_os = "windows")]
+mod win_taskbar {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+    use std::thread;
+    use std::time::Duration;
+
+    #[repr(C)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    #[repr(C)]
+    struct PropertyKey {
+        fmtid: Guid,
+        pid: u32,
+    }
+
+    #[repr(C)]
+    struct PropVariant {
+        vt: u16,
+        r1: u16,
+        r2: u16,
+        r3: u16,
+        pwsz: *const u16,
+        pad: u64,
+    }
+
+    #[repr(C)]
+    struct IPropertyStoreVtbl {
+        query_interface: usize,
+        add_ref: usize,
+        release: unsafe extern "system" fn(*mut c_void) -> u32,
+        get_count: usize,
+        get_at: usize,
+        get_value: usize,
+        set_value: unsafe extern "system" fn(*mut c_void, *const PropertyKey, *const PropVariant) -> i32,
+        commit: unsafe extern "system" fn(*mut c_void) -> i32,
+    }
+
+    #[repr(C)]
+    struct IPropertyStore {
+        vtbl: *const IPropertyStoreVtbl,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn EnumWindows(cb: unsafe extern "system" fn(isize, isize) -> i32, lparam: isize) -> i32;
+        fn IsWindowVisible(hwnd: isize) -> i32;
+        fn GetWindowTextW(hwnd: isize, buf: *mut u16, max_count: i32) -> i32;
+        fn SendMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHGetPropertyStoreForWindow(hwnd: isize, riid: *const Guid, ppv: *mut *mut c_void) -> i32;
+        fn ExtractIconExW(file: *const u16, index: i32, large: *mut isize, small: *mut isize, count: u32) -> u32;
+    }
+
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoInitializeEx(reserved: *mut c_void, coinit: u32) -> i32;
+        fn CoUninitialize();
+    }
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    unsafe extern "system" fn enum_cb(hwnd: isize, lparam: isize) -> i32 {
+        if IsWindowVisible(hwnd) == 0 {
+            return 1;
+        }
+        let mut buf = [0u16; 256];
+        let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+        if len > 0 {
+            let title = String::from_utf16_lossy(&buf[..len as usize]);
+            if title.contains("Portfolio DECK") {
+                *(lparam as *mut isize) = hwnd;
+                return 0;
+            }
+        }
+        1
+    }
+
+    unsafe fn set_prop(store: *mut IPropertyStore, pid: u32, val: &str) {
+        let key = PropertyKey {
+            fmtid: Guid {
+                data1: 0x9F4C2855,
+                data2: 0x9F79,
+                data3: 0x4B39,
+                data4: [0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3],
+            },
+            pid,
+        };
+        let wide = to_wide(val);
+        let pv = PropVariant {
+            vt: 31, // VT_LPWSTR
+            r1: 0,
+            r2: 0,
+            r3: 0,
+            pwsz: wide.as_ptr(),
+            pad: 0,
+        };
+        let vtbl = &*(*store).vtbl;
+        (vtbl.set_value)(store as *mut c_void, &key, &pv);
+    }
+
+    pub fn apply_taskbar_identity(exe: &Path) {
+        let exe_str = exe.to_string_lossy().into_owned();
+        thread::spawn(move || {
+            let mut target_hwnd: isize = 0;
+            for _ in 0..60 {
+                unsafe {
+                    EnumWindows(enum_cb, (&mut target_hwnd as *mut isize) as isize);
+                }
+                if target_hwnd != 0 {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            if target_hwnd == 0 {
+                return;
+            }
+
+            unsafe {
+                let exe_wide: Vec<u16> = Path::new(&exe_str)
+                    .as_os_str()
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+                let mut h_large: isize = 0;
+                let mut h_small: isize = 0;
+                if ExtractIconExW(exe_wide.as_ptr(), 0, &mut h_large, &mut h_small, 1) > 0 {
+                    const WM_SETICON: u32 = 0x0080;
+                    if h_large != 0 {
+                        SendMessageW(target_hwnd, WM_SETICON, 1, h_large);
+                    }
+                    if h_small != 0 {
+                        SendMessageW(target_hwnd, WM_SETICON, 0, h_small);
+                    }
+                }
+
+                let hr_co = CoInitializeEx(std::ptr::null_mut(), 2); // COINIT_APARTMENTTHREADED
+                let iid_store = Guid {
+                    data1: 0x886D8EEB,
+                    data2: 0x8CF2,
+                    data3: 0x4446,
+                    data4: [0x8D, 0x02, 0xCD, 0xBA, 0x1D, 0xBD, 0xCF, 0x99],
+                };
+                let mut raw_store: *mut c_void = std::ptr::null_mut();
+                if SHGetPropertyStoreForWindow(target_hwnd, &iid_store, &mut raw_store) == 0
+                    && !raw_store.is_null()
+                {
+                    let store = raw_store as *mut IPropertyStore;
+                    set_prop(store, 5, "kopykatA.PortfolioDECK"); // PKEY_AppUserModel_ID
+                    set_prop(store, 2, &format!("\"{exe_str}\"")); // PKEY_AppUserModel_RelaunchCommand
+                    set_prop(store, 3, &format!("{exe_str},0")); // PKEY_AppUserModel_RelaunchIconResource
+                    set_prop(store, 4, "Portfolio DECK"); // PKEY_AppUserModel_RelaunchDisplayNameResource
+                    let vtbl = &*(*store).vtbl;
+                    (vtbl.commit)(raw_store);
+                    (vtbl.release)(raw_store);
+                }
+                if hr_co == 0 || hr_co == 1 {
+                    CoUninitialize();
+                }
+            }
+        });
+    }
+}
+
 fn main() {
     let dir = Arc::new(data_dir());
     let listener = TcpListener::bind("127.0.0.1:4173")
@@ -256,6 +433,10 @@ fn main() {
             .is_ok()
         {
             launched = true;
+            #[cfg(target_os = "windows")]
+            if let Ok(exe) = std::env::current_exe() {
+                win_taskbar::apply_taskbar_identity(&exe);
+            }
         }
     }
     if !launched {

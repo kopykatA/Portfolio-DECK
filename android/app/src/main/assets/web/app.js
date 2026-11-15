@@ -360,30 +360,44 @@ function drawLineChart(box, svg, series, estEl, est, animate=true){
   const grid=[0,1,2,3].map(i=>`<line x1="0" x2="${W}" y1="${pad+i*(H-pad*2-18)/3}" y2="${pad+i*(H-pad*2-18)/3}" stroke="rgba(128,140,165,.12)" stroke-dasharray="2 6"/>`).join('');
 
   if(S.cfg.chartMode==='candle' && series.length>=4){
-    const count=Math.min(20, Math.max(8, Math.floor(series.length/3)));
-    const step=series.length/count;
+    const count=Math.max(24, Math.min(52, Math.floor(W/14)));
+    const at=t=>{
+      const pos=t*(series.length-1), i=Math.floor(pos), f=pos-i;
+      return i>=series.length-1 ? series[series.length-1] : series[i]*(1-f)+series[i+1]*f;
+    };
+    const diffs=series.slice(1).map((v,i)=>Math.abs(v-series[i]));
+    const avgVol=(diffs.reduce((a,b)=>a+b,0)/(diffs.length||1))||span*0.02;
     const candles=[];
     let prevClose=series[0];
     for(let k=0;k<count;k++){
-      const s=Math.floor(k*step), e=k===count-1?series.length:Math.floor((k+1)*step);
-      const seg=series.slice(s, Math.max(s+1, e));
-      const open=k===0?seg[0]:prevClose, close=seg[seg.length-1];
-      const high=Math.max(open,close,...seg), low=Math.min(open,close,...seg);
+      const t0=k/count, t1=(k+1)/count, tm=(t0+t1)/2;
+      const open=k===0?series[0]:prevClose;
+      const close=k===count-1?series[series.length-1]:at(t1);
+      const mid=at(tm);
+      const body=Math.abs(close-open);
+      const h1=((Math.sin(k*12.9898+series.length)*43758.5453)%1+1)%1;
+      const h2=((Math.sin((k+7)*78.233+series.length)*19341.123)%1+1)%1;
+      const wickUp=Math.max(body*0.35, avgVol*(0.45+h1*1.1));
+      const wickDn=Math.max(body*0.35, avgVol*(0.45+h2*1.1));
+      const high=Math.max(open,close,mid)+wickUp;
+      const low=Math.max(0, Math.min(open,close,mid)-wickDn);
       prevClose=close;
-      candles.push({open,close,high,low,s,e});
+      candles.push({open,close,high,low});
     }
-    const cw=W/candles.length, bw=Math.max(4, Math.min(18, cw*0.58));
+    const cMin=Math.min(min,...candles.map(c=>c.low)), cMax=Math.max(max,...candles.map(c=>c.high)), cSpan=(cMax-cMin)||1;
+    const cyOf=v=>cSpan===1&&cMin===0 ? H*0.6 : pad+(1-(v-cMin)/cSpan)*(H-pad*2-18);
+    const cw=W/candles.length, bw=Math.max(4, Math.min(14, cw*0.72));
     const bars=candles.map((cd,k)=>{
       const cx=(k+0.5)*cw, up=cd.close>=cd.open;
-      const col=up?'var(--up)':'var(--down)', fill=up?'rgba(46,230,166,.78)':'rgba(255,93,122,.78)';
-      const yH=yOf(cd.high), yL=yOf(cd.low), yO=yOf(cd.open), yC=yOf(cd.close);
+      const col=up?'var(--up)':'var(--down)', fill=up?'rgba(46,230,166,.82)':'rgba(255,93,122,.82)';
+      const yH=cyOf(cd.high), yL=cyOf(cd.low), yO=cyOf(cd.open), yC=cyOf(cd.close);
       const top=Math.min(yO,yC), h=Math.max(2.5, Math.abs(yO-yC));
-      return `<line x1="${cx}" x2="${cx}" y1="${yH}" y2="${yL}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity=".85"/>`+
-             `<rect x="${cx-bw/2}" y="${top}" width="${bw}" height="${h}" rx="2.5" fill="${fill}" stroke="${col}" stroke-width="1"/>`;
+      return `<line x1="${cx}" x2="${cx}" y1="${yH}" y2="${yL}" stroke="${col}" stroke-width="1.35" stroke-linecap="round" opacity=".88"/>`+
+             `<rect x="${cx-bw/2}" y="${top}" width="${bw}" height="${h}" rx="2" fill="${fill}" stroke="${col}" stroke-width=".9"/>`;
     }).join('');
     svg.innerHTML=`${grid}<g class="${animate?'area-in':''}">${bars}</g>`;
     if(estEl) estEl.classList.toggle('on',!!est && series.some(x=>x>0));
-    return series.map((v,i)=>[i/(series.length-1)*W, yOf(v)]);
+    return series.map((v,i)=>[i/(series.length-1)*W, cyOf(v)]);
   }
 
   const pts=series.map((v,i)=>[i/(series.length-1)*W, yOf(v)]);

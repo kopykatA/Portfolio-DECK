@@ -51,10 +51,11 @@ const hydrateIcons = (root=document) => root.querySelectorAll('[data-icon]').for
 const KEY='deck.portfolio.v2', WKEY='deck.watch.v2', CKEY='deck.settings.v2';
 const CG_IDS = {BTC:'bitcoin',ETH:'ethereum',SOL:'solana',ADA:'cardano',XRP:'ripple',DOGE:'dogecoin',BNB:'binancecoin',USDC:'usd-coin',USDT:'tether',AVAX:'avalanche-2',DOT:'polkadot',LINK:'chainlink',LTC:'litecoin',BCH:'bitcoin-cash',XLM:'stellar',TRX:'tron',SHIB:'shiba-inu',TON:'the-open-network',SUI:'sui',NEAR:'near',APT:'aptos',UNI:'uniswap',ICP:'internet-computer',FIL:'filecoin',ATOM:'cosmos',ALGO:'algorand',ETC:'ethereum-classic',AAVE:'aave',PEPE:'pepe'};
 const COMM = {gold:'GC=F',silver:'SI=F',oil:'CL=F','crude oil':'CL=F',crude:'CL=F',brent:'BZ=F','natural gas':'NG=F',gas:'NG=F',copper:'HG=F',platinum:'PL=F',palladium:'PA=F',wheat:'ZW=F',corn:'ZC=F',coffee:'KC=F',sugar:'SB=F',cotton:'CT=F'};
-const QT = {Equity:['EQUITY'],Fund:['ETF','MUTUALFUND'],Commodity:['FUTURE']};
+const IDX = {'s&p 500':'^GSPC','s&p500':'^GSPC',sp500:'^GSPC',spx:'^GSPC',gspc:'^GSPC',nasdaq:'^IXIC','nasdaq composite':'^IXIC',ixic:'^IXIC','nasdaq 100':'^NDX',ndx:'^NDX',dow:'^DJI','dow jones':'^DJI',dji:'^DJI',djia:'^DJI','russell 2000':'^RUT',russell:'^RUT',rut:'^RUT',dax:'^GDAXI',gdaxi:'^GDAXI',ftse:'^FTSE','ftse 100':'^FTSE',nikkei:'^N225','nikkei 225':'^N225',n225:'^N225',vix:'^VIX','cac 40':'^FCHI',cac40:'^FCHI','euro stoxx 50':'^STOXX50E',stoxx50:'^STOXX50E','hang seng':'^HSI',hsi:'^HSI'};
+const QT = {Equity:['EQUITY'],Fund:['ETF','MUTUALFUND'],Commodity:['FUTURE'],Index:['INDEX']};
 const PALETTE = ['#4f7cff','#8b5cf6','#22d3ee','#2ee6a6','#f59e0b','#ff6b9a','#64748b'];
-const TYPES = [{k:'Crypto',ic:'coin'},{k:'Equity',ic:'chart'},{k:'Fund',ic:'fund'},{k:'Commodity',ic:'gem'},{k:'Other',ic:'dot'}];
-const PH = {Crypto:'BTC · Ethereum',Equity:'AAPL · Apple',Fund:'VOO · Vanguard',Commodity:'Gold · GC=F'};
+const TYPES = [{k:'Crypto',ic:'coin'},{k:'Equity',ic:'chart'},{k:'Fund',ic:'fund'},{k:'Commodity',ic:'gem'},{k:'Index',ic:'trendUp'},{k:'Other',ic:'dot'}];
+const PH = {Crypto:'BTC · Ethereum',Equity:'AAPL · Apple',Fund:'VOO · Vanguard',Commodity:'Gold · GC=F',Index:'S&P 500 · ^GSPC'};
 const CURS = ['USD','EUR','BTC','ETH'];
 
 const readJSON = (k,d) => { try{ const v=JSON.parse(localStorage.getItem(k)); return v??d; }catch{ return d; } };
@@ -292,6 +293,7 @@ async function findCrypto(q){
 async function findYahoo(type,q){
   let ticker=null, name=null; const low=q.toLowerCase();
   if(type==='Commodity'&&COMM[low]) ticker=COMM[low];
+  if(type==='Index'&&IDX[low]) ticker=IDX[low];
   if(!ticker){
     try{
       const s=await yfGet(`/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
@@ -300,9 +302,9 @@ async function findYahoo(type,q){
       if(hit){ ticker=hit.symbol; name=hit.longname||hit.shortname; }
     }catch(e){ if(!/HTTP 4|✗/.test(e.message)) throw e; }
   }
-  if(!ticker) ticker=q.toUpperCase();
+  if(!ticker) ticker=type==='Index'&&!q.startsWith('^')?('^'+q.toUpperCase()):q.toUpperCase();
   const r=await yfQuote(ticker).catch(()=>{ throw new Error(`"${q}" ✗`); });
-  return {symbol:ticker.replace(/=F$/,''),name:name||r.name,category:type,price:r.usd,daily_change_pct:r.chg,coingecko_id:'',ticker,icon:''};
+  return {symbol:ticker.replace(/^\^/,'').replace(/=F$/,''),name:name||r.name,category:type,price:r.usd,daily_change_pct:r.chg,coingecko_id:'',ticker,icon:''};
 }
 const findAsset = (type,q) => type==='Crypto'?findCrypto(q):findYahoo(type,q);
 
@@ -736,7 +738,7 @@ function openModal(idx=null){
 const show = id => { const m=$(id); m.classList.add('open'); m.setAttribute('aria-hidden','false'); setTimeout(()=>$('input',m)?.focus(),350); };
 const hideModal = m => { m.classList.remove('open'); m.setAttribute('aria-hidden','true'); };
 function renderTypes(){
-  const el=$('#types'), list=S.mode==='watch'?TYPES.filter(t=>t.k!=='Other'):TYPES;
+  const el=$('#types'), list=S.mode==='watch'?TYPES.filter(t=>t.k!=='Other'):TYPES.filter(t=>t.k!=='Index');
   if(!list.some(t=>t.k===S.type)) S.type=list[0].k;
   el.innerHTML=list.map(t=>`<button type="button" class="type ${t.k===S.type?'on':''}" data-t="${t.k}" title="${t.k}">${icon(t.ic)}</button>`).join('');
   $$('.type',el).forEach(b=>b.onclick=()=>{ const keep=readFields(); S.type=b.dataset.t; renderTypes(); renderFields(null,keep); });

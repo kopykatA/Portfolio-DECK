@@ -233,6 +233,7 @@ public class MainActivity extends Activity {
             case "cmc": base = "https://pro-api.coinmarketcap.com"; break;
             case "av": base = "https://www.alphavantage.co"; break;
             case "fh": base = "https://finnhub.io/api/v1"; break;
+            case "fng": base = "https://api.alternative.me"; break;
             default:
                 sendResp(out, "404 Not Found", "application/json", "{\"error\":\"unknown\"}".getBytes(StandardCharsets.UTF_8));
                 return;

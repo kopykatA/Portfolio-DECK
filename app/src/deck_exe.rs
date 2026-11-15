@@ -61,6 +61,7 @@ fn handle_proxy(client: &Client, kind: &str, rest: &str, headers: &HashMap<Strin
         "cmc" => ("https://pro-api.coinmarketcap.com", rest.to_owned()),
         "av" => ("https://www.alphavantage.co", rest.to_owned()),
         "fh" => ("https://finnhub.io/api/v1", rest.to_owned()),
+        "fng" => ("https://api.alternative.me", rest.to_owned()),
         _ => return ("404 Not Found".into(), "application/json".into(), b"{\"error\":\"unknown\"}".to_vec()),
     };
 

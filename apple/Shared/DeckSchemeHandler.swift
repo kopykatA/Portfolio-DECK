@@ -156,7 +156,8 @@ final class DeckSchemeHandler: NSObject, WKURLSchemeHandler {
             "yf": "https://query1.finance.yahoo.com",
             "cmc": "https://pro-api.coinmarketcap.com",
             "av": "https://www.alphavantage.co",
-            "fh": "https://finnhub.io/api/v1"
+            "fh": "https://finnhub.io/api/v1",
+            "fng": "https://api.alternative.me"
         ]
         guard let base = bases[kind] else {
             finish(schemeTask, status: 404, contentType: "application/json", data: Data(#"{"error":"unknown"}"#.utf8))

@@ -431,6 +431,18 @@ em{font-style:normal}
 .ad-notes::placeholder{color:var(--dim)}
 :root[data-theme="light"] .ad-notes{background:rgba(15,23,42,.035)}
 
+/* fear & greed indicator + historic overlay */
+.fng-pill{position:absolute;left:10px;bottom:6px;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:99px;background:rgba(12,16,28,.55);border:1px solid var(--line);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-size:11px;color:var(--muted);transition:border-color .25s,background .25s,transform .25s}
+.fng-pill:hover{border-color:var(--line-hi);background:var(--card-hi);color:var(--text);transform:translateY(-1px)}
+.fng-dot{width:6px;height:6px;border-radius:50%;background:var(--fng,var(--dim));box-shadow:0 0 8px var(--fng,transparent);flex:none}
+.fng-lbl{letter-spacing:.05em;font-weight:500}
+.fng-pill b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.fng-pill em{font-style:normal;color:var(--fng,var(--muted));font-weight:500}
+:root[data-theme="light"] .fng-pill{background:rgba(255,255,255,.78)}
+.fng-badge{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-weight:600;font-size:17px;font-variant-numeric:tabular-nums;color:var(--fng,var(--text));background:color-mix(in srgb,var(--fng,#64748b) 16%,transparent);border:1px solid color-mix(in srgb,var(--fng,#64748b) 42%,transparent)}
+.fng-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.fng-stats{grid-template-columns:repeat(2,1fr)}}
+
 /* ---- v6: round asset icons without outer borders ---- */
 .coin,.ad-id .coin,.sheet-title .coin{border-radius:50%;overflow:hidden}
 .coin.has-img{background:transparent!important}

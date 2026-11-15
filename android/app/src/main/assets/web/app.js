@@ -66,6 +66,7 @@ const S = {
   page:'portfolio', range:'1M', sort:{k:'value',dir:-1}, q:'', hide:false,
   edit:null, mode:'own', type:'Crypto', busy:false, hist:{}, lastUpdate:null, src:'', histReq:0,
   ad: null, adRange: '1M', adReq: 0,
+  fng: [], fngRange: '1M',
 };
 const isCrypto = a => /crypto/i.test(a.category);
 function normalizeAssets(){ [...S.assets,...S.watch].forEach(a => { if(!a.coingecko_id && isCrypto(a)) a.coingecko_id = CG_IDS[a.symbol]||''; if(typeof a.notes!=='string') a.notes=''; }); }
@@ -907,16 +908,70 @@ async function loadServerData(){
     }
   }catch{}
   refresh(true);
+  fetchFng();
+}
+let fngData=[], fngPts=[], fngSlice=[];
+function fngColor(v){ return v<25?'#ff5d7a':v<45?'#fb923c':v<=55?'#94a3b8':v<75?'#86efac':'#2ee6a6'; }
+function fngLabel(v){ return v<25?'Extreme Fear':v<45?'Fear':v<=55?'Neutral':v<75?'Greed':'Extreme Greed'; }
+function renderFngPill(){
+  const pill=$('#fngPill'); if(!pill) return;
+  if(!S.fng.length){ $('#fngVal').textContent='--'; $('#fngCls').textContent=''; pill.style.removeProperty('--fng'); return; }
+  const cur=S.fng[S.fng.length-1];
+  pill.style.setProperty('--fng',fngColor(cur.v));
+  $('#fngVal').textContent=cur.v;
+  $('#fngCls').textContent=cur.cls||fngLabel(cur.v);
+}
+async function fetchFng(){
+  try{
+    const url=API.proxy?'/api/fng/fng/?limit=365':'https://api.alternative.me/fng/?limit=365';
+    let j=await fetch(url).then(r=>r.ok?r.json():Promise.reject());
+    if(!j?.data?.length && API.proxy) j=await fetch('https://api.alternative.me/fng/?limit=365').then(r=>r.json());
+    if(Array.isArray(j?.data)){
+      S.fng=j.data.map(d=>({v:+d.value,cls:d.value_classification||fngLabel(+d.value),ts:(+d.timestamp)*1000})).reverse();
+      renderFngPill();
+      if($('#fngOverlay').classList.contains('open')) drawFngChart(true);
+    }
+  }catch{}
+}
+function drawFngChart(animate=true){
+  if(!S.fng.length) return;
+  const days=RANGE_DAYS[S.fngRange]||30;
+  fngSlice=S.fng.slice(-Math.min(S.fng.length, days));
+  fngData=fngSlice.map(d=>d.v);
+  fngPts=drawLineChart($('#fngChart'),$('#fngChartSvg'),fngData,null,false,animate);
+}
+function openFngOverlay(){
+  const ov=$('#fngOverlay'); ov.classList.add('open'); ov.setAttribute('aria-hidden','false');
+  $$('#fngRanges button').forEach(b=>b.classList.toggle('on',b.dataset.r===S.fngRange));
+  if(!S.fng.length) fetchFng();
+  if(S.fng.length){
+    const cur=S.fng[S.fng.length-1], yest=S.fng[Math.max(0,S.fng.length-2)], wk=S.fng[Math.max(0,S.fng.length-8)];
+    const avg30=Math.round(S.fng.slice(-30).reduce((s,d)=>s+d.v,0)/Math.min(30,S.fng.length));
+    const col=fngColor(cur.v);
+    $('#fngBadge').textContent=cur.v;
+    $('#fngBadge').style.setProperty('--fng',col);
+    $('#fngHeadVal').innerHTML=`<b style="color:${col}">${cur.v}</b><span class="pill" style="color:${col};background:color-mix(in srgb,${col} 14%,transparent)">${esc(cur.cls)}</span>`;
+    $('#fngStats').innerHTML=`
+      <article class="card ad-stat"><em>Today</em><b style="color:${col}">${cur.v}</b><small>${esc(cur.cls)}</small></article>
+      <article class="card ad-stat"><em>Yesterday</em><b>${yest.v}</b><small>${esc(yest.cls)}</small></article>
+      <article class="card ad-stat"><em>7 Days Ago</em><b>${wk.v}</b><small>${esc(wk.cls)}</small></article>
+      <article class="card ad-stat"><em>30D Average</em><b>${avg30}</b><small>${esc(fngLabel(avg30))}</small></article>`;
+    requestAnimationFrame(()=>drawFngChart(true));
+  }
+}
+function closeFngOverlay(){
+  const ov=$('#fngOverlay'); ov.classList.remove('open'); ov.setAttribute('aria-hidden','true');
 }
 function syncChartModeBtns(){
   const on=S.cfg.chartMode==='candle';
-  ['#btnChartMode','#btnAdChartMode'].forEach(sel=>{ const b=$(sel); if(b) b.classList.toggle('active',on); });
+  ['#btnChartMode','#btnAdChartMode','#btnFngChartMode'].forEach(sel=>{ const b=$(sel); if(b) b.classList.toggle('active',on); });
 }
 function toggleChartMode(){
   S.cfg.chartMode=S.cfg.chartMode==='candle'?'line':'candle';
   save(); syncChartModeBtns();
   if(chartData.length) drawChart(chartData,$('#est').classList.contains('on'),true);
   if(S.ad && adData.length) adPts=drawLineChart($('#adChart'),$('#adChartSvg'),adData,$('#adEst'),$('#adEst').classList.contains('on'),true);
+  if($('#fngOverlay').classList.contains('open') && fngData.length) drawFngChart(true);
 }
 function init(){
   hydrateIcons();
@@ -925,10 +980,14 @@ function init(){
   $$('.rail-btn[data-page]').forEach(b=>b.onclick=()=>setPage(b.dataset.page));
   $$('#ranges button').forEach(b=>b.onclick=()=>{ $$('#ranges button').forEach(x=>x.classList.toggle('on',x===b)); S.range=b.dataset.r; moveRange(); updateChart(true); });
   $$('#adRanges button').forEach(b=>b.onclick=()=>{ $$('#adRanges button').forEach(x=>x.classList.toggle('on',x===b)); S.adRange=b.dataset.r; updateAssetChart(true); });
+  $$('#fngRanges button').forEach(b=>b.onclick=()=>{ $$('#fngRanges button').forEach(x=>x.classList.toggle('on',x===b)); S.fngRange=b.dataset.r; drawFngChart(true); });
   $('#btnChartMode').onclick=toggleChartMode;
   $('#btnAdChartMode').onclick=toggleChartMode;
+  $('#btnFngChartMode').onclick=toggleChartMode;
+  $('#fngPill').onclick=openFngOverlay;
+  $('#btnFngClose').onclick=closeFngOverlay;
   $$('.sort').forEach(b=>b.onclick=()=>{ const k=b.dataset.k; S.sort=S.sort.k===k?{k,dir:-S.sort.dir}:{k,dir:k==='name'?1:-1}; renderRows(false); });
-  addEventListener('keydown',e=>{ if(e.key==='Escape'){ $$('.modal.open').forEach(hideModal); closeAllocOverlay(); closeAssetDetail(); } });
+  addEventListener('keydown',e=>{ if(e.key==='Escape'){ $$('.modal.open').forEach(hideModal); closeAllocOverlay(); closeAssetDetail(); closeFngOverlay(); } });
   $('#btnRefresh').onclick=()=>refresh(false);
   $('#btnAdd').onclick=()=>openModal();
   $('#btnExport').onclick=openCsvModal;
@@ -983,9 +1042,10 @@ function init(){
   document.addEventListener('pointermove',e=>{ const c=e.target.closest?.('.glow'); if(c){ const r=c.getBoundingClientRect(); c.style.setProperty('--mx',(e.clientX-r.left)+'px'); c.style.setProperty('--my',(e.clientY-r.top)+'px'); } });
   $$('.magnetic').forEach(m=>{ m.addEventListener('pointermove',e=>{ const r=m.getBoundingClientRect(); m.style.transform=`translate(${(e.clientX-r.left-r.width/2)*.25}px,${(e.clientY-r.top-r.height/2)*.25}px)`; }); m.addEventListener('pointerleave',()=>{ m.style.transition='transform .6s var(--ease)'; m.style.transform=''; setTimeout(()=>m.style.transition='',600); }); });
   addEventListener('pointermove',e=>{ const x=(e.clientX/innerWidth-.5), y=(e.clientY/innerHeight-.5); $$('.orb').forEach((o,i)=>o.style.translate=`${-x*(30+i*18)}px ${-y*(30+i*18)}px`); });
-  let rz; addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ movePill(); moveRange(); if(S.page==='portfolio'){ drawChart(chartData,$('#est').classList.contains('on'),false); renderAlloc(false); } if($('#allocOverlay').classList.contains('open')) openAllocOverlay(false); if(S.ad) adPts=drawLineChart($('#adChart'),$('#adChartSvg'),adData,$('#adEst'),$('#adEst').classList.contains('on'),false); },120); });
+  let rz; addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ movePill(); moveRange(); if(S.page==='portfolio'){ drawChart(chartData,$('#est').classList.contains('on'),false); renderAlloc(false); } if($('#allocOverlay').classList.contains('open')) openAllocOverlay(false); if(S.ad) adPts=drawLineChart($('#adChart'),$('#adChartSvg'),adData,$('#adEst'),$('#adEst').classList.contains('on'),false); if($('#fngOverlay').classList.contains('open')) drawFngChart(false); },120); });
   bindChartHover($('#chart'),$('#cursor'),$('#tip'),()=>chartData,()=>chartPts,()=>S.range,v=>S.hide?'••••••':fmtDisplayCur(conv(v)));
   bindChartHover($('#adChart'),$('#adCursor'),$('#adTip'),()=>adData,()=>adPts,()=>S.adRange,v=>fmtAssetPriceCur(conv(v)));
+  bindChartHover($('#fngChart'),$('#fngCursor'),$('#fngTip'),()=>fngData,()=>fngPts,()=>S.fngRange,v=>`${Math.round(v)} · ${fngLabel(v)}`);
   renderAll(); movePill(); moveRange();
   loadServerData();
   setInterval(()=>refresh(true),90e3);

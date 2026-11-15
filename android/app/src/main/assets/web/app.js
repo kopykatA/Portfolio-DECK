@@ -815,8 +815,13 @@ function saveSettings(e){ e.preventDefault(); S.cfg.cmcKey=$('#cmcKey').value.tr
 function openCsvModal(){ show('#csvModal'); }
 function exportCsv(){
   const cell=s=>`"${String(s??'').replace(/"/g,'""')}"`;
-  let c='symbol,name,category,units,current_price_usd,average_cost_usd,daily_change_pct,market_value_usd,cost_basis_usd,unrealized_pl_usd,watchlist,notes\n';
-  S.assets.forEach(a=>{ c+=[cell(a.symbol),cell(a.name),cell(a.category),a.units,a.price,a.average_cost,a.daily_change_pct,val(a),cost(a),pl(a),a.watchlist,cell(a.notes||'')].join(',')+'\n'; });
+  const all=[...S.assets.map(a=>({a,w:!!a.watchlist})), ...S.watch.map(a=>({a,w:true}))];
+  let c='symbol,name,category,units,current_price_usd,average_cost_usd,daily_change_pct,market_value_usd,cost_basis_usd,unrealized_pl_usd,watchlist,notes,ticker,coingecko_id\n';
+  all.forEach(({a,w})=>{
+    const u=a.units||0, pr=a.price||0, avg=a.average_cost??pr, chg=a.daily_change_pct||0;
+    const mv=u*pr, cb=u*avg, upl=mv-cb;
+    c+=[cell(a.symbol),cell(a.name),cell(a.category),u,pr,avg,chg,mv,cb,upl,w,cell(a.notes||''),cell(a.ticker||''),cell(a.coingecko_id||'')].join(',')+'\n';
+  });
   if(window.webkit?.messageHandlers?.exportCsv){
     window.webkit.messageHandlers.exportCsv.postMessage({filename:'portfolio-deck-export.csv', content:c});
   } else if(window.AndroidBridge?.exportCsv){
@@ -824,7 +829,7 @@ function exportCsv(){
   } else {
     const url=URL.createObjectURL(new Blob([c],{type:'text/csv'})), l=document.createElement('a'); l.href=url; l.download='portfolio-deck-export.csv'; l.click(); URL.revokeObjectURL(url);
   }
-  toast(`${S.assets.length} ↓`);
+  toast(`${all.length} ↓`);
 }
 function parseCsvRows(text){
   const rows=[]; let row=[], val='', inQ=false;
@@ -860,31 +865,41 @@ function importCsvText(text, replace){
   const iUnits=idx('units','amount','quantity','qty','held'), iPrice=idx('current_price_usd','price','currentprice','price_usd');
   const iCost=idx('average_cost_usd','average_cost','avg_cost','cost','buy_price'), iChg=idx('daily_change_pct','change','change_24h','24h');
   const iWatch=idx('watchlist','watch','starred'), iNotes=idx('notes','note','memo');
+  const iTicker=idx('ticker','yf_ticker','yahoo_ticker'), iCg=idx('coingecko_id','cg_id','coingecko');
   if(iSym<0) return toast('Missing symbol column',true);
   const imported=[];
   for(let r=1;r<rows.length;r++){
-    const c=rows[r], sym=(c[iSym]||'').trim().toUpperCase();
-    if(!sym) continue;
+    const c=rows[r], rawSym=(c[iSym]||'').trim().toUpperCase();
+    if(!rawSym) continue;
     const catRaw=(iCat>=0?c[iCat]:'Crypto')||'Crypto';
-    const cat=TYPES.find(t=>t.k.toLowerCase()===catRaw.toLowerCase())?.k || (/crypto/i.test(catRaw)?'Crypto':/stock|eq/i.test(catRaw)?'Equity':/etf|fund/i.test(catRaw)?'Fund':/comm|gold|silver|oil/i.test(catRaw)?'Commodity':'Other');
+    const cat=TYPES.find(t=>t.k.toLowerCase()===catRaw.toLowerCase())?.k || (/crypto/i.test(catRaw)?'Crypto':/stock|eq/i.test(catRaw)?'Equity':/etf|fund/i.test(catRaw)?'Fund':/comm|gold|silver|oil/i.test(catRaw)?'Commodity':/index|indices/i.test(catRaw)?'Index':'Other');
+    const name=(iName>=0&&c[iName])?c[iName]:rawSym.replace(/^\^/,'');
+    const sym=cat==='Index'?rawSym.replace(/^\^/,''):rawSym;
     const num=(i,d=0)=>{ const v=i>=0?parseFloat(String(c[i]).replace(/[$,%\s]/g,'')):NaN; return isFinite(v)?v:d; };
     const units=num(iUnits,0), price=num(iPrice,0), avg=num(iCost,price), chg=num(iChg,0);
     const w=iWatch>=0 && /^(true|1|yes|y)$/i.test(String(c[iWatch]).trim());
     const notes=iNotes>=0?String(c[iNotes]||''):'';
+    let ticker=iTicker>=0?String(c[iTicker]||'').trim():'';
+    if(!ticker){
+      if(cat==='Index') ticker=IDX[name.toLowerCase()]||IDX[sym.toLowerCase()]||(rawSym.startsWith('^')?rawSym:'^'+sym);
+      else if(cat==='Commodity') ticker=COMM[name.toLowerCase()]||COMM[sym.toLowerCase()]||'';
+      else if(cat==='Equity'||cat==='Fund') ticker=sym;
+    }
+    const cgId=(iCg>=0&&c[iCg])?String(c[iCg]).trim():(cat==='Crypto'?(CG_IDS[sym]||''):'');
     imported.push({
-      symbol:sym, name:(iName>=0&&c[iName])?c[iName]:sym, category:cat,
+      symbol:sym, name, category:cat,
       units, price, average_cost:avg, daily_change_pct:chg,
-      coingecko_id:cat==='Crypto'?(CG_IDS[sym]||''):'', watchlist:w, notes
+      coingecko_id:cgId, ticker, watchlist:w, notes
     });
   }
   if(!imported.length) return toast('No valid rows found',true);
   if(replace){ S.assets=[]; S.watch=[]; }
   imported.forEach(item=>{
     if(item.units===0 && item.watchlist){
-      const wi=S.watch.findIndex(x=>x.symbol===item.symbol);
+      const wi=S.watch.findIndex(x=>x.symbol===item.symbol&&x.category===item.category);
       if(wi>=0) S.watch[wi]=item; else S.watch.push(item);
     }else{
-      const ai=S.assets.findIndex(x=>x.symbol===item.symbol);
+      const ai=S.assets.findIndex(x=>x.symbol===item.symbol&&x.category===item.category);
       if(ai>=0) S.assets[ai]=item; else S.assets.push(item);
     }
   });

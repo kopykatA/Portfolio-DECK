@@ -710,12 +710,28 @@ async function refresh(silent){
 }
 
 /* ---------- add / edit modal ---------- */
+function syncWatchAddUI(){
+  const u=$('#fUnits'), c=$('#fCost'); if(!u) return;
+  const watchOnly=$('#fWatch').checked && S.edit==null && S.mode!=='watch';
+  if(watchOnly){
+    if(u.value==='1') u.value='';
+    u.placeholder='0 (watch only)';
+    u.closest('.field')?.classList.add('opt');
+    c?.closest('.field')?.classList.add('opt');
+  }else{
+    if(u.value==='') u.value='1';
+    u.placeholder='#';
+    u.closest('.field')?.classList.remove('opt');
+    c?.closest('.field')?.classList.remove('opt');
+  }
+}
 function openModal(idx=null){
   S.mode=S.page==='watch'&&idx==null?'watch':'own'; S.edit=idx;
   const a=idx!=null?S.assets[idx]:null; S.type=a?a.category:'Crypto';
   $('#fWatch').checked=a?a.watchlist:false; $('#starToggle').style.display=S.mode==='watch'?'none':'';
+  $('#fWatch').onchange=syncWatchAddUI;
   $('#sheetTitle').innerHTML = a ? `${coinHtml(a)}<span>${esc(a.name)}</span>` : icon(S.mode==='watch'?'star':'plus');
-  msg(''); renderTypes(); renderFields(a); show('#modal');
+  msg(''); renderTypes(); renderFields(a); syncWatchAddUI(); show('#modal');
 }
 const show = id => { const m=$(id); m.classList.add('open'); m.setAttribute('aria-hidden','false'); setTimeout(()=>$('input',m)?.focus(),350); };
 const hideModal = m => { m.classList.remove('open'); m.setAttribute('aria-hidden','true'); };
@@ -749,23 +765,30 @@ async function submit(e){
   try{
     if(lookupMode()){
       const q=(f.fSym||'').trim(); if(!q) throw new Error('⌕ ?');
+      const rawUnits=(f.fUnits||'').trim();
+      const watchOnly=S.mode==='watch' || (watch && S.edit==null && (rawUnits==='' || Number(rawUnits.replace(',','.'))===0));
       let units=0, buy=null;
-      if(S.mode!=='watch'){ units=num(f.fUnits,'#'); if(units<=0) throw new Error('# > 0'); buy=(f.fCost||'').trim()===''?null:num(f.fCost,'$'); if(buy!=null&&buy<0) throw new Error('$ ≥ 0'); }
+      if(!watchOnly){ units=num(f.fUnits,'#'); if(units<=0) throw new Error('# > 0'); buy=(f.fCost||'').trim()===''?null:num(f.fCost,'$'); if(buy!=null&&buy<0) throw new Error('$ ≥ 0'); }
       btn.disabled=true; msg('⌕ …',true);
       const found=await findAsset(S.type,q);
-      if(S.mode==='watch'){
+      if(watchOnly){
         if([...S.assets,...S.watch].some(a=>a.symbol===found.symbol&&a.category===found.category)) throw new Error(found.symbol+' ✓ already');
-        S.watch.push(found);
+        S.watch.push({...found, watchlist:true});
       }else S.assets.push({...found,units,average_cost:buy??found.price,watchlist:watch});
       toast(found.name+' ✓');
     }else{
       const symbol=(f.fSym||'').trim().toUpperCase(), name=(f.fName||'').trim();
       if(!symbol||!name) throw new Error('⌕ · Aa ?');
-      const units=num(f.fUnits,'#'), price=num(f.fPrice,'$'), average_cost=(f.fCost||'').trim()===''?price:num(f.fCost,'Ø'), daily_change_pct=(f.fChg||'').trim()===''?0:num(f.fChg,'Δ');
+      const rawUnits=(f.fUnits||'').trim();
+      const watchOnly=watch && S.edit==null && (rawUnits==='' || Number(rawUnits.replace(',','.'))===0);
+      const units=watchOnly?0:num(f.fUnits,'#'), price=num(f.fPrice,'$'), average_cost=(f.fCost||'').trim()===''?price:num(f.fCost,'Ø'), daily_change_pct=(f.fChg||'').trim()===''?0:num(f.fChg,'Δ');
       if(units<0||price<0||average_cost<0||daily_change_pct<=-100) throw new Error('≥ 0');
       const old=S.edit==null?null:S.assets[S.edit]; let id=old?.coingecko_id||''; if(S.type==='Crypto'&&!id) id=CG_IDS[symbol]||'';
       const rec={symbol,name,category:S.type,units,price,average_cost,daily_change_pct,coingecko_id:S.type==='Crypto'?id:'',ticker:old?.ticker||'',icon:old?.icon||'',watchlist:watch};
-      if(old) S.assets[S.edit]=rec; else S.assets.push(rec);
+      if(watchOnly){
+        if([...S.assets,...S.watch].some(a=>a.symbol===rec.symbol&&a.category===rec.category)) throw new Error(rec.symbol+' ✓ already');
+        S.watch.push(rec);
+      }else if(old) S.assets[S.edit]=rec; else S.assets.push(rec);
       toast(name+' ✓');
     }
     save(); hideModal($('#modal')); S.hist={}; redrawData(); if(S.page==='portfolio') updateChart(true);

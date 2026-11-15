@@ -42,6 +42,7 @@ const I = {
   expand:'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
   upload:'<path d="M12 16V5"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/>',
   csv:'<path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/><path d="M8 14V4m0 0L5 7m3-3l3 3"/><path d="M16 4v10m0 0l-3-3m3 3l3-3"/>',
+  candles:'<path d="M7 4v3m0 8v5"/><rect x="5" y="7" width="4" height="8" rx="1"/><path d="M17 3v4m0 6v7"/><rect x="15" y="7" width="4" height="6" rx="1"/>',
 };
 const icon = n => `<svg class="ic" viewBox="0 0 24 24">${I[n]||''}</svg>`;
 const hydrateIcons = (root=document) => root.querySelectorAll('[data-icon]').forEach(el => { if(!el.dataset.done){ el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)); el.dataset.done=1; } });
@@ -60,7 +61,7 @@ const readJSON = (k,d) => { try{ const v=JSON.parse(localStorage.getItem(k)); re
 const S = {
   assets: Array.isArray(readJSON(KEY,null)) ? readJSON(KEY,null) : [],
   watch: Array.isArray(readJSON(WKEY,null)) ? readJSON(WKEY,null) : [],
-  cfg: Object.assign({cmcKey:'', apis:[], theme:'dark', cur:'USD'}, readJSON(CKEY,{})),
+  cfg: Object.assign({cmcKey:'', apis:[], theme:'dark', cur:'USD', chartMode:'line'}, readJSON(CKEY,{})),
   rates: { eurPerUsd: 0.92, btcUsd: 85000, ethUsd: 3000 },
   page:'portfolio', range:'1M', sort:{k:'value',dir:-1}, q:'', hide:false,
   edit:null, mode:'own', type:'Crypto', busy:false, hist:{}, lastUpdate:null, src:'', histReq:0,
@@ -355,10 +356,39 @@ function drawLineChart(box, svg, series, estEl, est, animate=true){
   const W=box.clientWidth, H=box.clientHeight, pad=14; if(!W||!H) return [];
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const min=Math.min(...series), max=Math.max(...series), span=(max-min)||1;
-  const pts=series.map((v,i)=>[i/(series.length-1)*W, span===1&&min===0 ? H*0.6 : pad+(1-(v-min)/span)*(H-pad*2-18)]);
+  const yOf=v=>span===1&&min===0 ? H*0.6 : pad+(1-(v-min)/span)*(H-pad*2-18);
+  const grid=[0,1,2,3].map(i=>`<line x1="0" x2="${W}" y1="${pad+i*(H-pad*2-18)/3}" y2="${pad+i*(H-pad*2-18)/3}" stroke="rgba(128,140,165,.12)" stroke-dasharray="2 6"/>`).join('');
+
+  if(S.cfg.chartMode==='candle' && series.length>=4){
+    const count=Math.min(20, Math.max(8, Math.floor(series.length/3)));
+    const step=series.length/count;
+    const candles=[];
+    let prevClose=series[0];
+    for(let k=0;k<count;k++){
+      const s=Math.floor(k*step), e=k===count-1?series.length:Math.floor((k+1)*step);
+      const seg=series.slice(s, Math.max(s+1, e));
+      const open=k===0?seg[0]:prevClose, close=seg[seg.length-1];
+      const high=Math.max(open,close,...seg), low=Math.min(open,close,...seg);
+      prevClose=close;
+      candles.push({open,close,high,low,s,e});
+    }
+    const cw=W/candles.length, bw=Math.max(4, Math.min(18, cw*0.58));
+    const bars=candles.map((cd,k)=>{
+      const cx=(k+0.5)*cw, up=cd.close>=cd.open;
+      const col=up?'var(--up)':'var(--down)', fill=up?'rgba(46,230,166,.78)':'rgba(255,93,122,.78)';
+      const yH=yOf(cd.high), yL=yOf(cd.low), yO=yOf(cd.open), yC=yOf(cd.close);
+      const top=Math.min(yO,yC), h=Math.max(2.5, Math.abs(yO-yC));
+      return `<line x1="${cx}" x2="${cx}" y1="${yH}" y2="${yL}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity=".85"/>`+
+             `<rect x="${cx-bw/2}" y="${top}" width="${bw}" height="${h}" rx="2.5" fill="${fill}" stroke="${col}" stroke-width="1"/>`;
+    }).join('');
+    svg.innerHTML=`${grid}<g class="${animate?'area-in':''}">${bars}</g>`;
+    if(estEl) estEl.classList.toggle('on',!!est && series.some(x=>x>0));
+    return series.map((v,i)=>[i/(series.length-1)*W, yOf(v)]);
+  }
+
+  const pts=series.map((v,i)=>[i/(series.length-1)*W, yOf(v)]);
   const line=smooth(pts), area=`${line} L${W},${H} L0,${H} Z`;
   const up=series[series.length-1]>=series[0], c=up?'#4f7cff':'#ff5d7a', c2=up?'#8fb0ff':'#ff9ab0';
-  const grid=[0,1,2,3].map(i=>`<line x1="0" x2="${W}" y1="${pad+i*(H-pad*2-18)/3}" y2="${pad+i*(H-pad*2-18)/3}" stroke="rgba(128,140,165,.12)" stroke-dasharray="2 6"/>`).join('');
   svg.innerHTML=`<defs>
     <linearGradient id="ga_${svg.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".35"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient>
     <linearGradient id="gl_${svg.id}" x1="0" x2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></linearGradient>
@@ -465,8 +495,14 @@ function renderTreemap(box, legend, items, total, animate, showAllLabels){
   }).join('');
   legend.innerHTML=items.map((s,i)=>`<li data-i="${i}"><i style="background:${s.c}"></i>${esc(s.label)}<em>${(s.v/total*100).toFixed(1)}%</em></li>`).join('');
   const hl=i=>{ box.classList.toggle('hov',i!=null); $$('.tile',box).forEach(c=>c.classList.toggle('hl',+c.dataset.i===i)); $$('li',legend).forEach(l=>l.classList.toggle('hl',+l.dataset.i===i)); };
-  $$('.tile',box).forEach(el=>{ el.onpointerenter=()=>hl(+el.dataset.i); el.onpointerleave=()=>hl(null); });
-  $$('li',legend).forEach(el=>{ el.onpointerenter=()=>hl(+el.dataset.i); el.onpointerleave=()=>hl(null); });
+  const openIdx=i=>{
+    const item=items[i]; if(!item) return;
+    const asset=S.assets.find(a=>a.symbol===item.label); if(!asset) return;
+    if($('#allocOverlay').classList.contains('open')) closeAllocOverlay();
+    openAssetDetail(asset, true);
+  };
+  $$('.tile',box).forEach(el=>{ el.onpointerenter=()=>hl(+el.dataset.i); el.onpointerleave=()=>hl(null); el.onclick=()=>openIdx(+el.dataset.i); });
+  $$('li',legend).forEach(el=>{ el.onpointerenter=()=>hl(+el.dataset.i); el.onpointerleave=()=>hl(null); el.onclick=()=>openIdx(+el.dataset.i); });
 }
 function renderAlloc(animate=true){
   const total=sum(S.assets,val), box=$('#tmap'); if(!box) return;
@@ -850,22 +886,35 @@ async function loadServerData(){
       const d=await fetch('/api/data').then(r=>r.json());
       if(Array.isArray(d.assets)) S.assets=d.assets;
       if(Array.isArray(d.watch)) S.watch=d.watch;
-      if(d.cfg && typeof d.cfg==='object') S.cfg=Object.assign({cmcKey:'',apis:[],theme:'dark',cur:'USD'}, d.cfg);
+      if(d.cfg && typeof d.cfg==='object') S.cfg=Object.assign({cmcKey:'',apis:[],theme:'dark',cur:'USD',chartMode:'line'}, d.cfg);
       normalizeAssets();
+      syncChartModeBtns();
       renderAll();
     }
   }catch{}
   refresh(true);
 }
+function syncChartModeBtns(){
+  const on=S.cfg.chartMode==='candle';
+  ['#btnChartMode','#btnAdChartMode'].forEach(sel=>{ const b=$(sel); if(b) b.classList.toggle('active',on); });
+}
+function toggleChartMode(){
+  S.cfg.chartMode=S.cfg.chartMode==='candle'?'line':'candle';
+  save(); syncChartModeBtns();
+  if(chartData.length) drawChart(chartData,$('#est').classList.contains('on'),true);
+  if(S.ad && adData.length) adPts=drawLineChart($('#adChart'),$('#adChartSvg'),adData,$('#adEst'),$('#adEst').classList.contains('on'),true);
+}
 function init(){
   hydrateIcons();
+  syncChartModeBtns();
   const st=document.createElement('style'); st.textContent='@keyframes draw0{to{stroke-dashoffset:0}}'; document.head.appendChild(st);
   $$('.rail-btn[data-page]').forEach(b=>b.onclick=()=>setPage(b.dataset.page));
   $$('#ranges button').forEach(b=>b.onclick=()=>{ $$('#ranges button').forEach(x=>x.classList.toggle('on',x===b)); S.range=b.dataset.r; moveRange(); updateChart(true); });
   $$('#adRanges button').forEach(b=>b.onclick=()=>{ $$('#adRanges button').forEach(x=>x.classList.toggle('on',x===b)); S.adRange=b.dataset.r; updateAssetChart(true); });
+  $('#btnChartMode').onclick=toggleChartMode;
+  $('#btnAdChartMode').onclick=toggleChartMode;
   $$('.sort').forEach(b=>b.onclick=()=>{ const k=b.dataset.k; S.sort=S.sort.k===k?{k,dir:-S.sort.dir}:{k,dir:k==='name'?1:-1}; renderRows(false); });
-  $('#q').oninput=e=>{ S.q=e.target.value; renderRows(false); renderWatch(false); };
-  addEventListener('keydown',e=>{ if(e.key==='/'&&!/INPUT|SELECT/.test(document.activeElement.tagName)){ e.preventDefault(); $('#q').focus(); } if(e.key==='Escape'){ $$('.modal.open').forEach(hideModal); closeAllocOverlay(); closeAssetDetail(); $('#q').blur(); } });
+  addEventListener('keydown',e=>{ if(e.key==='Escape'){ $$('.modal.open').forEach(hideModal); closeAllocOverlay(); closeAssetDetail(); } });
   $('#btnRefresh').onclick=()=>refresh(false);
   $('#btnAdd').onclick=()=>openModal();
   $('#btnExport').onclick=openCsvModal;

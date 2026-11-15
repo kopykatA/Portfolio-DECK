@@ -41,11 +41,6 @@
   </nav>
 
   <main class="main">
-    <header class="top reveal">
-      <div class="live" id="live" title="Live prices"><i></i><span id="liveText"></span></div>
-      <label class="search"><span data-icon="search"></span><input id="q" placeholder="Search" autocomplete="off" spellcheck="false"><kbd>/</kbd></label>
-    </header>
-
     <div id="pagePortfolio" class="page">
       <section class="row-hero">
         <article class="card hero reveal glow" style="--d:.05s">
@@ -55,12 +50,16 @@
               <div class="big num-h clickable" id="total" title="Click to switch USD / EUR / BTC / ETH">$0.00</div>
               <div class="delta" id="dayDelta"></div>
             </div>
-            <div class="ranges" id="ranges">
-              <button data-r="1D">1D</button><button data-r="1W">1W</button><button data-r="1M" class="on">1M</button><button data-r="3M">3M</button><button data-r="1Y">1Y</button>
-              <i class="range-ind"></i>
+            <div class="chart-controls">
+              <div class="ranges" id="ranges">
+                <button data-r="1D">1D</button><button data-r="1W">1W</button><button data-r="1M" class="on">1M</button><button data-r="3M">3M</button><button data-r="1Y">1Y</button>
+                <i class="range-ind"></i>
+              </div>
+              <button type="button" class="icon-btn chart-mode-btn" id="btnChartMode" title="Toggle Line / Candle chart" data-icon="candles"></button>
             </div>
           </div>
           <div class="chart" id="chart">
+            <div class="live live-chart" id="live" title="Live prices"><i></i><span id="liveText"></span></div>
             <svg id="chartSvg" preserveAspectRatio="none"></svg>
             <div class="cursor" id="cursor"><i></i><div class="tip" id="tip"></div></div>
             <div class="est" id="est" title="Estimated curve — live history unavailable">◌</div>
@@ -136,8 +135,11 @@
   <div class="ad-head">
     <div class="ad-id" id="adId"></div>
     <div class="ad-price-box" id="adPrice"></div>
-    <div class="ranges" id="adRanges">
-      <button data-r="1D">1D</button><button data-r="1W">1W</button><button data-r="1M" class="on">1M</button><button data-r="3M">3M</button><button data-r="1Y">1Y</button>
+    <div class="chart-controls">
+      <div class="ranges" id="adRanges">
+        <button data-r="1D">1D</button><button data-r="1W">1W</button><button data-r="1M" class="on">1M</button><button data-r="3M">3M</button><button data-r="1Y">1Y</button>
+      </div>
+      <button type="button" class="icon-btn chart-mode-btn" id="btnAdChartMode" title="Toggle Line / Candle chart" data-icon="candles"></button>
     </div>
     <button type="button" class="icon-btn" id="btnAdClose" title="Close" data-icon="x"></button>
   </div>

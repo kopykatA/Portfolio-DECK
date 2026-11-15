@@ -67,7 +67,7 @@ const S = {
   ad: null, adRange: '1M', adReq: 0,
 };
 const isCrypto = a => /crypto/i.test(a.category);
-function normalizeAssets(){ [...S.assets,...S.watch].forEach(a => { if(!a.coingecko_id && isCrypto(a)) a.coingecko_id = CG_IDS[a.symbol]||''; }); }
+function normalizeAssets(){ [...S.assets,...S.watch].forEach(a => { if(!a.coingecko_id && isCrypto(a)) a.coingecko_id = CG_IDS[a.symbol]||''; if(typeof a.notes!=='string') a.notes=''; }); }
 normalizeAssets();
 function save(){
   localStorage.setItem(KEY, JSON.stringify(S.assets));
@@ -404,9 +404,9 @@ function bindChartHover(box, cur, tip, getData, getPts, getRange, fmtVal){
 /* ---------- allocation: top 3 on main card + full-page motion takeover ---------- */
 function layout(items,x,y,w,h,out){
   if(!items.length || w<=0 || h<=0) return;
-  const total=sum(items,i=>i.v);
+  const total=sum(items,i=>i.wgt||i.v);
   if(total<=0) return;
-  const scaled=items.map(it=>({...it, area:it.v/total*w*h})).sort((a,b)=>b.area-a.area);
+  const scaled=items.map(it=>({...it, area:(it.wgt||it.v)/total*w*h})).sort((a,b)=>b.area-a.area);
   const worst=(row,side)=>{
     if(!row.length||side<=0) return Infinity;
     const s=row.reduce((a,b)=>a+b.area,0);
@@ -449,18 +449,19 @@ function renderTreemap(box, legend, items, total, animate, showAllLabels){
     return;
   }
   const W=box.clientWidth||300, H=box.clientHeight||200, tiles=[];
-  layout(items.map((t,i)=>({...t,i})),0,0,W,H,tiles);
+  const weighted=items.map((t,i)=>({...t, i, wgt:Math.pow(Math.max(t.v/total, 0.0045), 0.42)}));
+  layout(weighted,0,0,W,H,tiles);
   tiles.sort((a,b)=>a.i-b.i);
   box.innerHTML=tiles.map(t=>{
-    const minSide=Math.min(t.w,t.h);
-    const compact=t.w<96||t.h<68;
-    const tiny=t.w<44||t.h<34;
-    const big=showAllLabels ? (t.w>=44&&t.h>=34) : (t.w>62&&t.h>46);
-    const rad=Math.max(4,Math.min(showAllLabels?16:14,Math.floor(minSide*0.24)));
-    const pad=tiny?1.5:(compact?2:3);
-    const pct=(t.v/total*100).toFixed(t.v/total<.1?1:0);
-    const cls=`tile${animate?'':' no-anim'}${compact?' compact':''}${tiny?' tiny':''}`;
-    return `<div class="${cls}" data-i="${t.i}" title="${esc(t.label)} · ${(t.v/total*100).toFixed(2)}%" style="left:${t.x/W*100}%;top:${t.y/H*100}%;width:${t.w/W*100}%;height:${t.h/H*100}%;padding:${pad}px;--c:${t.c};--n:${t.i};--tr:${rad}px"><div class="tile-in">${big?`<b>${esc(t.label)}</b><small>${pct}%</small>`:''}</div></div>`;
+    const compact=t.w<112||t.h<64;
+    const micro=t.w<74||t.h<46;
+    const rad=micro?8:(compact?11:14);
+    const pad=micro?2:3;
+    const pctNum=t.v/total*100;
+    const pct=pctNum.toFixed(pctNum<10?1:0);
+    const fullName=t.name||t.label;
+    const cls=`tile${animate?'':' no-anim'}${compact?' compact':''}${micro?' micro':''}`;
+    return `<div class="${cls}" data-i="${t.i}" title="${esc(fullName)} (${esc(t.label)}) · ${pctNum.toFixed(2)}%" style="left:${t.x/W*100}%;top:${t.y/H*100}%;width:${t.w/W*100}%;height:${t.h/H*100}%;padding:${pad}px;--c:${t.c};--n:${t.i};--tr:${rad}px"><div class="tile-in"><b>${esc(fullName)}</b><small>${esc(t.label)} · ${pct}%</small></div></div>`;
   }).join('');
   legend.innerHTML=items.map((s,i)=>`<li data-i="${i}"><i style="background:${s.c}"></i>${esc(s.label)}<em>${(s.v/total*100).toFixed(1)}%</em></li>`).join('');
   const hl=i=>{ box.classList.toggle('hov',i!=null); $$('.tile',box).forEach(c=>c.classList.toggle('hl',+c.dataset.i===i)); $$('li',legend).forEach(l=>l.classList.toggle('hl',+l.dataset.i===i)); };
@@ -470,7 +471,7 @@ function renderTreemap(box, legend, items, total, animate, showAllLabels){
 function renderAlloc(animate=true){
   const total=sum(S.assets,val), box=$('#tmap'); if(!box) return;
   const items=[...S.assets].filter(a=>val(a)>0).sort((a,b)=>val(b)-val(a));
-  const top3=items.slice(0,3).map((a,i)=>({label:a.symbol,v:val(a),c:PALETTE[i]}));
+  const top3=items.slice(0,3).map((a,i)=>({label:a.symbol,name:a.name||a.symbol,v:val(a),c:PALETTE[i]}));
   $('#allocCount').textContent=items.length?`${Math.min(3,items.length)} / ${items.length}`:'0';
   $('#btnAllocAll').style.display=items.length?'':'none';
   renderTreemap(box, $('#legend'), top3, total, animate, false);
@@ -479,7 +480,7 @@ function openAllocOverlay(animate=true){
   const ov=$('#allocOverlay'); ov.classList.add('open'); ov.setAttribute('aria-hidden','false');
   const total=sum(S.assets,val);
   const items=[...S.assets].filter(a=>val(a)>0).sort((a,b)=>val(b)-val(a))
-    .map((a,i)=>({label:a.symbol,v:val(a),c:PALETTE[i%PALETTE.length]}));
+    .map((a,i)=>({label:a.symbol,name:a.name||a.symbol,v:val(a),c:PALETTE[i%PALETTE.length]}));
   $('#allocFullCount').textContent=`${items.length} assets`;
   requestAnimationFrame(()=>requestAnimationFrame(()=>renderTreemap($('#tmapFull'), $('#legendFull'), items, total, animate, true)));
 }
@@ -520,6 +521,16 @@ function openAssetDetail(a, owned){
   const ov=$('#assetOverlay'); ov.classList.add('open'); ov.setAttribute('aria-hidden','false');
   $('#adId').innerHTML=`${coinHtml(a)}<div><h2>${esc(a.name)}</h2><small>${esc(a.symbol)} · ${esc(a.category)}</small></div>`;
   renderAssetDetailBody();
+  const notesEl=$('#adNotes'), notesSt=$('#adNotesStatus');
+  if(notesEl){
+    notesEl.value=a.notes||'';
+    if(notesSt) notesSt.textContent='';
+    notesEl.oninput=()=>{
+      a.notes=notesEl.value;
+      save();
+      if(notesSt) notesSt.textContent='Saved';
+    };
+  }
   $$('#adRanges button').forEach(b=>b.classList.toggle('on',b.dataset.r===S.adRange));
   requestAnimationFrame(()=>updateAssetChart(true));
 }
@@ -727,9 +738,9 @@ function saveSettings(e){ e.preventDefault(); S.cfg.cmcKey=$('#cmcKey').value.tr
 /* ---------- csv ---------- */
 function openCsvModal(){ show('#csvModal'); }
 function exportCsv(){
-  const cell=s=>`"${String(s).replace(/"/g,'""')}"`;
-  let c='symbol,name,category,units,current_price_usd,average_cost_usd,daily_change_pct,market_value_usd,cost_basis_usd,unrealized_pl_usd,watchlist\n';
-  S.assets.forEach(a=>{ c+=[cell(a.symbol),cell(a.name),cell(a.category),a.units,a.price,a.average_cost,a.daily_change_pct,val(a),cost(a),pl(a),a.watchlist].join(',')+'\n'; });
+  const cell=s=>`"${String(s??'').replace(/"/g,'""')}"`;
+  let c='symbol,name,category,units,current_price_usd,average_cost_usd,daily_change_pct,market_value_usd,cost_basis_usd,unrealized_pl_usd,watchlist,notes\n';
+  S.assets.forEach(a=>{ c+=[cell(a.symbol),cell(a.name),cell(a.category),a.units,a.price,a.average_cost,a.daily_change_pct,val(a),cost(a),pl(a),a.watchlist,cell(a.notes||'')].join(',')+'\n'; });
   if(window.webkit?.messageHandlers?.exportCsv){
     window.webkit.messageHandlers.exportCsv.postMessage({filename:'portfolio-deck-export.csv', content:c});
   } else if(window.AndroidBridge?.exportCsv){
@@ -742,6 +753,8 @@ function exportCsv(){
 function parseCsvRows(text){
   const rows=[]; let row=[], val='', inQ=false;
   const s=text.replace(/^\uFEFF/,'');
+  const firstLine=s.split(/\r?\n/)[0]||'';
+  const delim=(firstLine.split(';').length>firstLine.split(',').length)?';':',';
   for(let i=0;i<s.length;i++){
     const ch=s[i];
     if(inQ){
@@ -750,7 +763,7 @@ function parseCsvRows(text){
       else val+=ch;
     }else{
       if(ch==='"') inQ=true;
-      else if(ch===','){ row.push(val.trim()); val=''; }
+      else if(ch===delim){ row.push(val.trim()); val=''; }
       else if(ch==='\n' || ch==='\r'){
         if(ch==='\r' && s[i+1]==='\n') i++;
         row.push(val.trim());
@@ -770,7 +783,7 @@ function importCsvText(text, replace){
   const iSym=idx('symbol','ticker','asset','coin'), iName=idx('name','assetname'), iCat=idx('category','type','class');
   const iUnits=idx('units','amount','quantity','qty','held'), iPrice=idx('current_price_usd','price','currentprice','price_usd');
   const iCost=idx('average_cost_usd','average_cost','avg_cost','cost','buy_price'), iChg=idx('daily_change_pct','change','change_24h','24h');
-  const iWatch=idx('watchlist','watch','starred');
+  const iWatch=idx('watchlist','watch','starred'), iNotes=idx('notes','note','memo');
   if(iSym<0) return toast('Missing symbol column',true);
   const imported=[];
   for(let r=1;r<rows.length;r++){
@@ -781,10 +794,11 @@ function importCsvText(text, replace){
     const num=(i,d=0)=>{ const v=i>=0?parseFloat(String(c[i]).replace(/[$,%\s]/g,'')):NaN; return isFinite(v)?v:d; };
     const units=num(iUnits,0), price=num(iPrice,0), avg=num(iCost,price), chg=num(iChg,0);
     const w=iWatch>=0 && /^(true|1|yes|y)$/i.test(String(c[iWatch]).trim());
+    const notes=iNotes>=0?String(c[iNotes]||''):'';
     imported.push({
       symbol:sym, name:(iName>=0&&c[iName])?c[iName]:sym, category:cat,
       units, price, average_cost:avg, daily_change_pct:chg,
-      coingecko_id:cat==='Crypto'?(CG_IDS[sym]||''):'', watchlist:w
+      coingecko_id:cat==='Crypto'?(CG_IDS[sym]||''):'', watchlist:w, notes
     });
   }
   if(!imported.length) return toast('No valid rows found',true);
